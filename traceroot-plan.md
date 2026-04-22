@@ -35,7 +35,7 @@ build_flags =
 lib_deps =
     https://github.com/M5Stack/M5Unified.git
     https://github.com/M5Stack/M5GFX.git
-    lvgl/lvgl @ ^9.x
+    lvgl/lvgl @ ^9.5.0
 ```
 
 - UI: LVGL v9 rendered via M5GFX as the display driver backend

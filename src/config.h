@@ -1,16 +1,17 @@
 #pragma once
 
-// ─── Bluetooth ────────────────────────────────────────────────────────────────
-// MAC address of the Veepeak Mini OBD-II adapter (format: "XX:XX:XX:XX:XX:XX")
-#define OBD_BT_MAC      "00:00:00:00:00:00"   // TODO: replace with your adapter MAC
-#define OBD_BT_NAME     "VEEPEAK"              // fallback name for discovery
+// ─── OBD-II UART (wired ELM327 via Serial2) ───────────────────────────────────
+// ESP32-P4 has no Bluetooth; connect ELM327 adapter via UART
+#define OBD_RX_PIN      16                     // GPIO connected to ELM327 TX
+#define OBD_TX_PIN      17                     // GPIO connected to ELM327 RX
+#define OBD_BAUD        38400
 
 // ─── Polling ──────────────────────────────────────────────────────────────────
 #define PID_POLL_INTERVAL_MS    100            // ms between each PID query
 
 // ─── Units ────────────────────────────────────────────────────────────────────
 // Set to 1 for mph, 0 for km/h
-#define SPEED_UNIT_MPH          0
+#define SPEED_UNIT_MPH          1
 
 // ─── Thresholds (for color coding) ────────────────────────────────────────────
 #define COOLANT_WARN_C          100
@@ -23,7 +24,6 @@
 // ─── Display ──────────────────────────────────────────────────────────────────
 #define DISPLAY_WIDTH           1280
 #define DISPLAY_HEIGHT          720
-#define LVGL_DRAW_BUF_LINES     20             // lines per LVGL draw buffer
 
 // ─── PIDs ─────────────────────────────────────────────────────────────────────
 #define PID_ENGINE_RPM          0x0C
