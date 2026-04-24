@@ -17,16 +17,12 @@ static void obd_task(void* param) {
     Serial.println("[OBD] Waiting for ELM327...");
     vTaskDelay(pdMS_TO_TICKS(2000));
 
-    if (xSemaphoreTake(gVehicleDataMutex, portMAX_DELAY)) {
-        gVehicleData.btConnected = true;
-        xSemaphoreGive(gVehicleDataMutex);
-    }
-
     if (!elm.begin(Serial2, /*debug=*/false, /*timeout=*/2000)) {
         Serial.println("[OBD] ELM327 handshake failed.");
     } else {
         Serial.println("[OBD] ELM327 ready.");
         if (xSemaphoreTake(gVehicleDataMutex, portMAX_DELAY)) {
+            gVehicleData.btConnected  = true;
             gVehicleData.obdConnected = true;
             xSemaphoreGive(gVehicleDataMutex);
         }
