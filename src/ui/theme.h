@@ -1,25 +1,38 @@
 #pragma once
 #include <M5GFX.h>
 
-// ─── Dark automotive color palette (RGB888 → M5GFX color32_t) ────────────────
-#define COLOR_BG              0x0D0D0D
-#define COLOR_TILE_BG         0x1A1A2E
-#define COLOR_TILE_BORDER     0x16213E
-#define COLOR_ACCENT          0x00D4FF
-#define COLOR_TEXT_PRIMARY    0xFFFFFF
-#define COLOR_TEXT_SECONDARY  0xA0A0B0
-#define COLOR_OK              0x00E676
-#define COLOR_WARN            0xFFD600
-#define COLOR_CRIT            0xFF1744
+// ─── Cyberpunk dark palette ───────────────────────────────────────────────────
+// All backgrounds are neutral dark greys — zero blue or color tint.
+// Accent colors appear ONLY on borders, text, icons, and small indicators.
+#define COLOR_BG              0x0A0A0AU
+#define COLOR_TILE_BG         0x141414U
+#define COLOR_TILE_BORDER     0x282828U
+#define COLOR_ACCENT          0x00FFCCU
+#define COLOR_ACCENT2         0xE8FF00U
+#define COLOR_TEXT_PRIMARY    0xE8E8E8U
+#define COLOR_TEXT_SECONDARY  0x606060U
+#define COLOR_OK              0x00C875U
+#define COLOR_WARN            0xFFAA00U
+#define COLOR_CRIT            0xFF2255U
 
-// ─── Thresholds ───────────────────────────────────────────────────────────────
+// ─── Threshold helper ─────────────────────────────────────────────────────────
 inline uint32_t theme_threshold_color(float value, float warnThresh, float critThresh) {
     if (value >= critThresh) return COLOR_CRIT;
     if (value >= warnThresh) return COLOR_WARN;
     return COLOR_OK;
 }
 
-// ─── Font sizes (M5GFX textSize multiplier, 1=8px base) ──────────────────────
-#define FONT_LARGE_SIZE   6
-#define FONT_MEDIUM_SIZE  3
-#define FONT_SMALL_SIZE   2
+// ─── Smooth anti-aliased fonts (M5GFX DejaVu) ────────────────────────────────
+// Call font_*() on any LovyanGFX sprite/display before drawString().
+// These replace the old setTextSize() multiplier approach (which was blocky).
+template<typename T> inline void font_tiny  (T* s) { s->setFont(&lgfx::fonts::DejaVu9);  s->setTextSize(1); }
+template<typename T> inline void font_small (T* s) { s->setFont(&lgfx::fonts::DejaVu18); s->setTextSize(1); }
+template<typename T> inline void font_medium(T* s) { s->setFont(&lgfx::fonts::DejaVu24); s->setTextSize(1); }
+template<typename T> inline void font_large (T* s) { s->setFont(&lgfx::fonts::DejaVu40); s->setTextSize(1); }
+template<typename T> inline void font_xlarge(T* s) { s->setFont(&lgfx::fonts::DejaVu56); s->setTextSize(1); }
+
+// Legacy size constants — intentionally kept at 1 so any stray setTextSize()
+// calls don't produce giant scaled glyphs. Migrate to font_*() helpers instead.
+#define FONT_LARGE_SIZE   1
+#define FONT_MEDIUM_SIZE  1
+#define FONT_SMALL_SIZE   1

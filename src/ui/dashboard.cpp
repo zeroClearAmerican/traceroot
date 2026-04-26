@@ -5,18 +5,18 @@
 #include <M5GFX.h>
 #include <Arduino.h>
 #include <cstdio>
-
-static M5GFX* gGfx = nullptr;
-static LGFX_Sprite* spr = nullptr;  // full-screen offscreen sprite
+#include <cstring>
 
 // ─── Layout constants ─────────────────────────────────────────────────────────
-static const int32_t W         = DISPLAY_WIDTH;
-static const int32_t H         = DISPLAY_HEIGHT;
 static const int32_t PAD       = 12;
 static const int32_t TILE_SM   = 180;
 static const int32_t ROW1_H    = 320;
 static const int32_t ROW2_H    = 160;
 static const int32_t STATUS_H  = 48;
+
+// Last-rendered snapshot — used to skip identical frames
+static VehicleData sLastData;
+static bool        sHasRendered = false;
 
 // ─── Drawing helpers ──────────────────────────────────────────────────────────
 
@@ -25,9 +25,17 @@ static void draw_tile(LGFX_Sprite* s, int32_t x, int32_t y, int32_t w, int32_t h
     s->drawRoundRect(x, y, w, h, 12, COLOR_TILE_BORDER);
 }
 
-static void draw_label_center(LGFX_Sprite* s, int32_t cx, int32_t cy, uint8_t sz,
+enum LabelSize { LBL_TINY, LBL_SMALL, LBL_MEDIUM, LBL_LARGE, LBL_XLARGE };
+
+static void draw_label_center(LGFX_Sprite* s, int32_t cx, int32_t cy, LabelSize sz,
                                uint32_t color, const char* text) {
-    s->setTextSize(sz);
+    switch (sz) {
+        case LBL_TINY:   font_tiny  (s); break;
+        case LBL_SMALL:  font_small (s); break;
+        case LBL_MEDIUM: font_medium(s); break;
+        case LBL_LARGE:  font_large (s); break;
+        case LBL_XLARGE: font_xlarge(s); break;
+    }
     s->setTextColor(color);
     s->setTextDatum(textdatum_t::middle_center);
     s->drawString(text, cx, cy);
@@ -59,31 +67,26 @@ static void draw_arc(LGFX_Sprite* s, int32_t cx, int32_t cy, int32_t radius,
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-void dashboard_init(M5GFX* gfx) {
-    gGfx = gfx;
-    spr = new LGFX_Sprite(gfx);
-    spr->setColorDepth(16);
-    spr->setPsram(true);   // must allocate in PSRAM — 1280×720×2 = 1.8 MB
-    if (!spr->createSprite(W, H)) {
-        Serial.println("[DASH] Sprite alloc FAILED — check PSRAM");
-        delete spr;
-        spr = nullptr;
-        return;
-    }
-    Serial.printf("[DASH] Sprite allocated OK (%dx%d)\n", W, H);
-    // first draw happens in loop() after mutex is created
-}
-
-void dashboard_update() {
-    if (!spr) return;
+bool dashboard_draw(LGFX_Sprite* spr, bool force) {
+    if (!spr) return false;
 
     VehicleData d;
     if (xSemaphoreTake(gVehicleDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
         d = gVehicleData;
         xSemaphoreGive(gVehicleDataMutex);
     } else {
-        return;
+        return false;
     }
+
+    // Skip redraw if data is identical to last rendered frame and not forced
+    if (sHasRendered && !force && memcmp(&d, &sLastData, sizeof(VehicleData)) == 0) {
+        return false;
+    }
+    sLastData    = d;
+    sHasRendered = true;
+
+    int32_t W = spr->width();
+    int32_t H = spr->height();
 
     spr->fillScreen(COLOR_BG);
 
@@ -95,33 +98,33 @@ void dashboard_update() {
 
     // Coolant tile
     draw_tile(spr, PAD, row1_y, TILE_SM, ROW1_H);
-    draw_label_center(spr, PAD + TILE_SM/2, row1_y + 20, FONT_SMALL_SIZE,
+    draw_label_center(spr, PAD + TILE_SM/2, row1_y + 20, LBL_TINY,
                       COLOR_TEXT_SECONDARY, "COOLANT");
     uint32_t c_col = theme_threshold_color(d.coolantTempC, COOLANT_WARN_C, COOLANT_CRIT_C);
-    snprintf(buf, sizeof(buf), "%.0f%cC", d.coolantTempC, 0xB0);
+    snprintf(buf, sizeof(buf), "%.0f F", d.coolantTempC * 9.0f / 5.0f + 32.0f);
     draw_label_center(spr, PAD + TILE_SM/2, row1_y + ROW1_H/2,
-                      FONT_MEDIUM_SIZE, c_col, buf);
+                      LBL_MEDIUM, c_col, buf);
 
     // RPM tile (center)
     int32_t rpm_x = PAD + TILE_SM + PAD;
     draw_tile(spr, rpm_x, row1_y, CENTER_W, ROW1_H);
     draw_label_center(spr, rpm_x + CENTER_W/2, row1_y + 20,
-                      FONT_SMALL_SIZE, COLOR_TEXT_SECONDARY, "RPM");
+                      LBL_TINY, COLOR_TEXT_SECONDARY, "RPM");
     draw_arc(spr, rpm_x + CENTER_W/2, row1_y + ROW1_H/2, 120,
              0, 8000, (int32_t)d.rpm, COLOR_ACCENT);
     snprintf(buf, sizeof(buf), "%.0f", d.rpm);
     draw_label_center(spr, rpm_x + CENTER_W/2, row1_y + ROW1_H/2,
-                      FONT_LARGE_SIZE, COLOR_TEXT_PRIMARY, buf);
+                      LBL_XLARGE, COLOR_TEXT_PRIMARY, buf);
 
     // Oil tile
     int32_t oil_x = rpm_x + CENTER_W + PAD;
     draw_tile(spr, oil_x, row1_y, TILE_SM, ROW1_H);
     draw_label_center(spr, oil_x + TILE_SM/2, row1_y + 20,
-                      FONT_SMALL_SIZE, COLOR_TEXT_SECONDARY, "OIL");
+                      LBL_TINY, COLOR_TEXT_SECONDARY, "OIL");
     uint32_t o_col = theme_threshold_color(d.oilTempC, OIL_WARN_C, OIL_CRIT_C);
-    snprintf(buf, sizeof(buf), "%.0f%cC", d.oilTempC, 0xB0);
+    snprintf(buf, sizeof(buf), "%.0f F", d.oilTempC * 9.0f / 5.0f + 32.0f);
     draw_label_center(spr, oil_x + TILE_SM/2, row1_y + ROW1_H/2,
-                      FONT_MEDIUM_SIZE, o_col, buf);
+                      LBL_MEDIUM, o_col, buf);
 
     // ── Row 2 ─────────────────────────────────────────────────────────────────
     int32_t row2_y = row1_y + ROW1_H + PAD;
@@ -130,18 +133,18 @@ void dashboard_update() {
     // Speed
     draw_tile(spr, PAD, row2_y, tile4_w, ROW2_H);
     draw_label_center(spr, PAD + tile4_w/2, row2_y + 16,
-                      FONT_SMALL_SIZE, COLOR_TEXT_SECONDARY,
+                      LBL_TINY, COLOR_TEXT_SECONDARY,
                       SPEED_UNIT_MPH ? "mph" : "km/h");
     float spd = SPEED_UNIT_MPH ? d.speedKmh * 0.621371f : d.speedKmh;
     snprintf(buf, sizeof(buf), "%.0f", spd);
     draw_label_center(spr, PAD + tile4_w/2, row2_y + ROW2_H/2,
-                      FONT_LARGE_SIZE, COLOR_TEXT_PRIMARY, buf);
+                      LBL_XLARGE, COLOR_TEXT_PRIMARY, buf);
 
     // Engine load arc
     int32_t load_x = PAD * 2 + tile4_w;
     draw_tile(spr, load_x, row2_y, tile4_w, ROW2_H);
     draw_label_center(spr, load_x + tile4_w/2, row2_y + 16,
-                      FONT_SMALL_SIZE, COLOR_TEXT_SECONDARY, "LOAD %");
+                      LBL_TINY, COLOR_TEXT_SECONDARY, "LOAD %");
     uint32_t l_col = theme_threshold_color(d.engineLoadPct,
                                            ENGINE_LOAD_WARN_PCT, ENGINE_LOAD_CRIT_PCT);
     draw_arc(spr, load_x + tile4_w/2, row2_y + ROW2_H/2 + 10, 55,
@@ -151,18 +154,18 @@ void dashboard_update() {
     int32_t thr_x = PAD * 3 + tile4_w * 2;
     draw_tile(spr, thr_x, row2_y, tile4_w, ROW2_H);
     draw_label_center(spr, thr_x + tile4_w/2, row2_y + 16,
-                      FONT_SMALL_SIZE, COLOR_TEXT_SECONDARY, "THROTTLE %");
+                      LBL_TINY, COLOR_TEXT_SECONDARY, "THROTTLE %");
     draw_arc(spr, thr_x + tile4_w/2, row2_y + ROW2_H/2 + 10, 55,
-             0, 100, (int32_t)d.throttlePosPct, COLOR_ACCENT);
+             0, 100, (int32_t)d.throttlePosPct, COLOR_ACCENT2);
 
     // Voltage
     int32_t volt_x = PAD * 4 + tile4_w * 3;
     draw_tile(spr, volt_x, row2_y, tile4_w, ROW2_H);
     draw_label_center(spr, volt_x + tile4_w/2, row2_y + 16,
-                      FONT_SMALL_SIZE, COLOR_TEXT_SECONDARY, "BATT V");
+                      LBL_TINY, COLOR_TEXT_SECONDARY, "BATT V");
     snprintf(buf, sizeof(buf), "%.2fV", d.ctrlModuleVoltage);
     draw_label_center(spr, volt_x + tile4_w/2, row2_y + ROW2_H/2,
-                      FONT_MEDIUM_SIZE, COLOR_TEXT_PRIMARY, buf);
+                      LBL_MEDIUM, COLOR_TEXT_PRIMARY, buf);
 
     // ── Status bar ────────────────────────────────────────────────────────────
     int32_t status_y = row2_y + ROW2_H + PAD;
@@ -170,17 +173,16 @@ void dashboard_update() {
 
     uint32_t conn_col = d.btConnected ? (uint32_t)COLOR_OK : (uint32_t)COLOR_TEXT_SECONDARY;
     draw_label_center(spr, PAD + 100, status_y + STATUS_H/2,
-                      FONT_SMALL_SIZE, conn_col,
+                      LBL_TINY, conn_col,
                       d.btConnected ? "OBD Connected" : "OBD Disconnected");
 
     snprintf(buf, sizeof(buf), "Protocol: %s", d.obdProtocol[0] ? d.obdProtocol : "--");
     draw_label_center(spr, W/2, status_y + STATUS_H/2,
-                      FONT_SMALL_SIZE, COLOR_TEXT_SECONDARY, buf);
+                      LBL_TINY, COLOR_TEXT_SECONDARY, buf);
 
-    snprintf(buf, sizeof(buf), "Intake: %.0fC", d.intakeAirTempC);
+    snprintf(buf, sizeof(buf), "Intake: %.0f F", d.intakeAirTempC * 9.0f / 5.0f + 32.0f);
     draw_label_center(spr, W - PAD - 120, status_y + STATUS_H/2,
-                      FONT_SMALL_SIZE, COLOR_TEXT_SECONDARY, buf);
+                      LBL_TINY, COLOR_TEXT_SECONDARY, buf);
 
-    // Push sprite to display
-    spr->pushSprite(0, 0);
+    return true;
 }

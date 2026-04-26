@@ -3,7 +3,8 @@
 #include <ELMduino.h>
 
 #include "config.h"
-#include "ui/dashboard.h"
+#include "ui/ui_manager.h"
+#include "lora_manager.h"
 #include <pid_poller.h>
 
 static M5GFX* gGfx = nullptr;
@@ -35,14 +36,20 @@ static void obd_task(void* param) {
 // ─── setup() ──────────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
+    // USB-CDC: wait up to 2 s for a host, then continue standalone.
+    // serial_baudrate=0 prevents M5.begin() from re-arming the CDC wait.
+    uint32_t t0 = millis();
+    while (!Serial && (millis() - t0) < 2000) { delay(10); }
 
     auto cfg = M5.config();
+    cfg.serial_baudrate = 0;  // Serial already started above; stop M5Unified re-blocking on CDC
     M5.begin(cfg);
     gGfx = &M5.Display;
     gGfx->setRotation(1);
     Serial.printf("[MAIN] Display: %dx%d\n", gGfx->width(), gGfx->height());
 
-    dashboard_init(gGfx);
+    ui_init(gGfx);
+    loraManagerStart();
 
     pidPollerStart(elm);
     xTaskCreatePinnedToCore(obd_task, "obd_task", 4096, nullptr, 1, nullptr, 0);
@@ -52,7 +59,5 @@ void setup() {
 
 // ─── loop() ───────────────────────────────────────────────────────────────────
 void loop() {
-    M5.update();
-    dashboard_update();
-    delay(33);  // ~30 fps
+    ui_update();    // touch always polled; rendering self-gates to ~30 fps
 }
